@@ -1,0 +1,54 @@
+#!/bin/sh
+# TEST IMAGE ONLY. Credential supplied by the isolated QEMU host, never by rootfs.
+PREREQ=""
+prereqs() { echo "$PREREQ"; }
+case "${1:-}" in prereqs) prereqs; exit 0 ;; esac
+
+fwcfg=/sys/firmware/qemu_fw_cfg/by_name/opt/org.northforge
+modprobe qemu_fw_cfg 2>/dev/null || true
+fail_closed() {
+    nonce=missing
+    [ ! -r "$fwcfg/test-nonce/raw" ] || nonce=$(tr -d '\000' < "$fwcfg/test-nonce/raw")
+    printf '\nNORTHFORGE_TEST %s %s FAIL\n' "$nonce" "${1:-persist.unlock}" > /dev/ttyS0
+    echo 'Northforge QEMU fixture: encrypted persistence unlock failed; refusing boot.' > /dev/console
+    while :; do sleep 3600; done
+}
+[ -r "$fwcfg/test-key/raw" ] || fail_closed
+device=$(blkid -t LABEL=NF-PERSIST -o device 2>/dev/null || true)
+new_filesystem=no
+if [ -z "$device" ]; then
+    # The host creates an empty, explicitly labelled, disposable test partition.
+    # Never format an existing signature, an ambiguous match, or a guessed disk.
+    device=$(blkid -t PARTLABEL=NF-TEST-PERSIST -o device 2>/dev/null) || fail_closed
+    [ -b "$device" ] || fail_closed
+    [ -z "$(blkid -p -s TYPE -o value "$device" 2>/dev/null || true)" ] || fail_closed
+    cryptsetup luksFormat --type luks2 --batch-mode --label NF-PERSIST \
+        --pbkdf argon2id --pbkdf-memory 32768 --pbkdf-parallel 1 --iter-time 100 \
+        --key-file "$fwcfg/test-key/raw" "$device" || fail_closed
+    new_filesystem=yes
+fi
+# -b also rejects an ambiguous multi-line result; no guessed/default disk.
+[ -b "$device" ] || fail_closed
+cryptsetup isLuks --type luks2 "$device" || fail_closed
+
+# A real negative credential check, rather than merely inspecting a LUKS label.
+# Only status 2 (rejected credential) is accepted; a missing binary or malformed
+# command must fail this test. Never print or read out the actual runtime key.
+if printf '%s' 'NORTHFORGE-DELIBERATELY-WRONG-QEMU-TEST-CREDENTIAL' | \
+    cryptsetup open --type luks2 --test-passphrase --key-file - "$device" >/dev/null 2>&1; then
+    fail_closed persist.reject-wrong-key
+else
+    rejection=$?
+    [ "$rejection" -eq 2 ] || fail_closed persist.reject-wrong-key
+fi
+nonce=$(tr -d '\000' < "$fwcfg/test-nonce/raw") || fail_closed
+printf '\nNORTHFORGE_TEST %s persist.reject-wrong-key PASS\n' "$nonce" > /dev/ttyS0
+
+cryptsetup open --type luks2 --key-file "$fwcfg/test-key/raw" "$device" northforge-persist || fail_closed
+if [ "$new_filesystem" = yes ]; then
+    /lib/northforge/bin/mkfs.ext4 -q -F /dev/mapper/northforge-persist || fail_closed
+    mkdir -p /run/northforge-test-provision || fail_closed
+    mount -t ext4 -o rw,nodev,nosuid,noexec /dev/mapper/northforge-persist /run/northforge-test-provision || fail_closed
+    mkdir -p /run/northforge-test-provision/state/northforge || fail_closed
+    umount /run/northforge-test-provision || fail_closed
+fi

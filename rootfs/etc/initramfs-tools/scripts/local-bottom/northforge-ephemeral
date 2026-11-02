@@ -1,0 +1,104 @@
+#!/bin/sh
+# Runs before init-bottom moves /dev and /run into the final root.
+set -eu
+case "${1:-}" in prereqs) exit 0 ;; esac
+
+fail_closed()
+{
+    echo "NORTHFORGE_BOOT_FAILURE=$1" >&2
+    echo "Northforge refuses to boot; no emergency shell is exposed." >&2
+    poweroff -f || halt -f || true
+    while :; do sleep 3600; done
+}
+
+# initramfs-tools does not necessarily stop when a child script exits nonzero.
+# Every unexpected error must halt here rather than fall through to a plain root.
+trap 'result=$?; [ "$result" -eq 0 ] || fail_closed unexpected-initramfs-error' EXIT
+trap 'fail_closed interrupted-initramfs' HUP INT TERM
+
+. /lib/northforge/persistence.sh
+: "${rootmnt:?initramfs-tools rootmnt is not set}"
+[ "$rootmnt" = /root ] || fail_closed unsupported-root-mount
+
+# Validate trusted manifest before touching disposable storage.
+declarations=$(northforge_validate_manifest /etc/northforge/persistence.conf) ||
+    fail_closed invalid-persistence-manifest
+
+# This implementation supports a single root filesystem, not a separate /usr.
+if awk -v prefix="$rootmnt/" 'index($2,prefix)==1 {found=1} END {exit !found}' /proc/mounts; then
+    fail_closed unsupported-nested-root-mount
+fi
+
+modprobe overlay || fail_closed overlay-unavailable
+modprobe dm_crypt || fail_closed dm-crypt-unavailable
+modprobe ext4 || fail_closed ext4-unavailable
+udevadm settle --timeout=10 || fail_closed device-discovery-timeout
+runtime_devices=$(blkid -t PARTLABEL=NF-RUNTIME -o device) ||
+    fail_closed runtime-partition-not-found
+# A dedicated GPT partition is required. Never format a configured host disk,
+# root partition, or an arbitrary command-line device path.
+set -- $runtime_devices
+[ "$#" -eq 1 ] && [ -b "$1" ] || fail_closed ambiguous-runtime-partition
+runtime_device=$(readlink -f "$1") || fail_closed invalid-runtime-device
+root_device=$(awk -v target="$rootmnt" '$2==target {print $1}' /proc/mounts)
+[ -n "$root_device" ] || fail_closed root-mount-not-found
+root_device=$(readlink -f "$root_device") || fail_closed invalid-root-device
+[ "$runtime_device" != "$root_device" ] || fail_closed runtime-is-root
+[ ! -e /dev/mapper/northforge-runtime ] || fail_closed runtime-mapper-already-open
+
+mount -o remount,ro "$rootmnt" || fail_closed root-readonly-failed
+mkdir -p /run/northforge/lower /run/northforge/runtime
+mount -o move "$rootmnt" /run/northforge/lower || fail_closed lower-move-failed
+# The key is generated inside cryptsetup from /dev/random and never retained.
+# Modern Linux blocks this read until the kernel CSPRNG is initialized.
+# Old upper/work contents become unreadable when the previous key is discarded.
+cryptsetup open --type plain --cipher aes-xts-plain64 --key-size 512 \
+    --key-file /dev/random "$runtime_device" northforge-runtime ||
+    fail_closed runtime-encryption-failed
+/lib/northforge/bin/mkfs.ext4 -q -F -m 0 -L NF-EPHEMERAL /dev/mapper/northforge-runtime ||
+    fail_closed runtime-format-failed
+mount -t ext4 -o rw,nodev,nosuid /dev/mapper/northforge-runtime /run/northforge/runtime ||
+    fail_closed runtime-mount-failed
+mkdir -p /run/northforge/runtime/upper /run/northforge/runtime/work
+mount -t overlay overlay \
+    -o lowerdir=/run/northforge/lower,upperdir=/run/northforge/runtime/upper,workdir=/run/northforge/runtime/work \
+    "$rootmnt" || fail_closed overlay-mount-failed
+
+# /run is moved by initramfs-tools later, carrying lower and runtime submounts.
+# The overlay inherits /run, /dev, /sys and /proc mountpoints from the base.
+mkdir -p "$rootmnt/persist" "$rootmnt/secure"
+chmod 0700 "$rootmnt/persist" "$rootmnt/secure"
+# An unavailable vault must reject writes, rather than look like durable storage.
+# /secure has no unlock implementation yet; keep it explicitly inaccessible.
+mount -o bind "$rootmnt/secure" "$rootmnt/secure" || fail_closed secure-lock-bind-failed
+mount -o remount,bind,ro,nodev,nosuid,noexec "$rootmnt/secure" || fail_closed secure-lock-failed
+
+# A missing volume is acceptable only when no persistence was declared.
+if [ -n "$declarations" ]; then
+    [ -b /dev/mapper/northforge-persist ] || fail_closed encrypted-persistence-locked
+    cryptsetup status northforge-persist | grep -Eq 'type:[[:space:]]+LUKS2' ||
+        fail_closed persistence-is-not-luks2
+    mount -t ext4 -o rw,nodev,nosuid,noexec /dev/mapper/northforge-persist "$rootmnt/persist" ||
+        fail_closed encrypted-persistence-mount-failed
+    old_ifs=$IFS
+    IFS='
+'
+    for declaration in $declarations; do
+        source=${declaration%% *}
+        target=${declaration#* }
+        from="$rootmnt/persist/$source"
+        to="$rootmnt$target"
+        [ -d "$from" ] && [ -d "$to" ] || fail_closed persistence-directory-not-provisioned
+        # Reject symlinks at any path component. A container-controlled symlink
+        # cannot redirect a future bind mount outside the authorised directory.
+        [ "$(readlink -f "$from")" = "$from" ] || fail_closed persistence-source-symlink
+        [ "$(readlink -f "$to")" = "$to" ] || fail_closed persistence-target-symlink
+        mount -o bind "$from" "$to" || fail_closed persistence-bind-failed
+        mount -o remount,bind,nodev,nosuid,noexec "$to" || fail_closed persistence-flags-failed
+    done
+    IFS=$old_ifs
+else
+    mount -o bind "$rootmnt/persist" "$rootmnt/persist" || fail_closed persistence-lock-bind-failed
+    mount -o remount,bind,ro,nodev,nosuid,noexec "$rootmnt/persist" || fail_closed persistence-lock-failed
+fi
+printf '%s\n' 'NORTHFORGE_EPHEMERAL_READY=1'

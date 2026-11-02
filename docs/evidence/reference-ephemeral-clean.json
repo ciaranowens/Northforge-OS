@@ -1,0 +1,32 @@
+{
+  "run_id": "ea1e1e304b434b099c6671f9d67441ec",
+  "nonce": "aaadeba10a62c1d8e092b691ce998d87",
+  "mode": "ephemeral",
+  "success": true,
+  "image": "/src/out/reference/northforge-reference.img",
+  "image_sha256_before": "4569aec73306015a783ad2b797170f2586690a18361190aedc22dfd313454ec2",
+  "acceleration": "tcg",
+  "firmware": "/usr/share/OVMF/OVMF_CODE_4M.fd",
+  "duration_seconds": 75.28,
+  "qemu_exit_code": 0,
+  "passed": [
+    "ephemeral.complete",
+    "ephemeral.discard",
+    "ephemeral.first-boot",
+    "identity",
+    "persist.approved",
+    "persist.encrypted",
+    "persist.reject-wrong-key",
+    "persist.survives",
+    "root.readonly",
+    "root.unchanged",
+    "runtime.encrypted",
+    "secure.locked",
+    "userspace"
+  ],
+  "failed": [],
+  "missing": [],
+  "complete": true,
+  "image_sha256_after": "4569aec73306015a783ad2b797170f2586690a18361190aedc22dfd313454ec2",
+  "source_image_unchanged": true
+}

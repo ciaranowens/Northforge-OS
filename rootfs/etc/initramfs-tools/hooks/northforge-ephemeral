@@ -1,0 +1,23 @@
+#!/bin/sh
+set -eu
+case "${1:-}" in prereqs) exit 0 ;; esac
+. /usr/share/initramfs-tools/hook-functions
+
+for program in cryptsetup blkid mount readlink; do
+    executable=$(command -v "$program") || {
+        echo "Northforge: missing initramfs dependency: $program" >&2
+        exit 1
+    }
+    copy_exec "$executable"
+done
+# mkfs.ext4 is normally a symlink to mke2fs. Debian's BusyBox hook may
+# already provide a partial mke2fs applet; copy_exec would then reuse it.
+# Install the real e2fsprogs executable at a unique path, without symlink aliasing.
+formatter=$(readlink -f "$(command -v mkfs.ext4)")
+copy_exec "$formatter" /lib/northforge/bin/mkfs.ext4
+for module in overlay dm_crypt dm_mod ext4 aes_generic xts; do
+    manual_add_modules "$module"
+done
+mkdir -p "$DESTDIR/etc/northforge" "$DESTDIR/lib/northforge"
+cp /etc/northforge/persistence.conf "$DESTDIR/etc/northforge/persistence.conf"
+cp /usr/lib/northforge/persistence.sh "$DESTDIR/lib/northforge/persistence.sh"

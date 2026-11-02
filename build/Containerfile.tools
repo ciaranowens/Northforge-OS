@@ -1,0 +1,20 @@
+# Isolated reference-image builder and QEMU runner; not the shipped OS.
+FROM debian:trixie-slim@sha256:f6b08b09a05725f9431502d3b5714f5c4576e82c1a84fa1debe0c24a7e0c3ec4
+RUN --mount=type=secret,id=proxy_ca,required=false \
+    set -eu; \
+    mkdir -p /usr/local/share/ca-certificates; \
+    ca_option=''; \
+    if [ -s /run/secrets/proxy_ca ]; then \
+      cp /run/secrets/proxy_ca /usr/local/share/ca-certificates/northforge-build-proxy.crt; \
+      ca_option='-o Acquire::https::CaInfo=/run/secrets/proxy_ca'; \
+    fi; \
+    apt-get $ca_option update; \
+    DEBIAN_FRONTEND=noninteractive apt-get $ca_option install -y --no-install-recommends \
+      ca-certificates debian-archive-keyring debootstrap dosfstools gdisk mtools \
+      e2fsprogs python3 rsync util-linux qemu-system-x86 qemu-utils ovmf \
+      cryptsetup cryptsetup-initramfs initramfs-tools busybox kmod curl git \
+      shellcheck file fdisk dialog uuid-runtime gawk linux-base locales; \
+    rm -f /usr/local/share/ca-certificates/northforge-build-proxy.crt; \
+    update-ca-certificates --fresh; \
+    rm -rf /var/lib/apt/lists/*
+WORKDIR /src

@@ -1,0 +1,128 @@
+{
+  "artifacts": {
+    "northforge-reference.img": {
+      "sha256": "4569aec73306015a783ad2b797170f2586690a18361190aedc22dfd313454ec2"
+    }
+  },
+  "base": "Debian 13 trixie",
+  "build_framework": "debootstrap (reference test target, not Armbian)",
+  "build_mode": "clean-debootstrap",
+  "built_at": "2026-11-02T16:19:55.725108+00:00",
+  "distribution": "Northforge OS",
+  "ephemeral_test_fixture": true,
+  "inputs": {
+    "VERSION": {
+      "sha256": "c2ef39e09593cca70be98a0fb0ab435b53e2eb3c3d4e812cd7d43794eafa7728"
+    },
+    "build/reference/build.sh": {
+      "sha256": "04acc347ff557678c3ebd43c453e846fe709bef26192b7f40f55d9c84c2435ec"
+    },
+    "build/reference/manifest.py": {
+      "sha256": "c014de6a75af33b6c808c9b832576f50963ca643040754326ecd7c91d07917da"
+    },
+    "rootfs/etc/initramfs-tools/conf.d/northforge": {
+      "sha256": "bdea4037866f42bb97effb4fde11c676a9f9b270ea0d8ce9737da3620d05f48b"
+    },
+    "rootfs/etc/initramfs-tools/hooks/northforge-ephemeral": {
+      "sha256": "62c788b4d534942383c5dd345972887413a7f2554de63bc59db991cc79a5b9ae"
+    },
+    "rootfs/etc/initramfs-tools/scripts/local-bottom/northforge-ephemeral": {
+      "sha256": "86f7ad98bdfeb465893c17836ea600edd62473a3c661da00b938f13215f1aa82"
+    },
+    "rootfs/etc/northforge/persistence.conf": {
+      "sha256": "7003e85da45ed345e449bdf8f8907e36560327b398765ab16829d8ec0f617e4c"
+    },
+    "rootfs/etc/os-release": {
+      "symlink": "../usr/lib/os-release"
+    },
+    "rootfs/etc/systemd/system-generators/systemd-gpt-auto-generator": {
+      "symlink": "/dev/null"
+    },
+    "rootfs/etc/systemd/system/emergency.service.d/northforge.conf": {
+      "sha256": "2f025f5e7a6d1686a7032a75918f5f5a643acb9d4796d26c74649702f03b04bc"
+    },
+    "rootfs/etc/systemd/system/multi-user.target.wants/northforge-boot-status.service": {
+      "symlink": "/usr/lib/systemd/system/northforge-boot-status.service"
+    },
+    "rootfs/etc/systemd/system/rescue.service.d/northforge.conf": {
+      "sha256": "5948da4d8705ebe572d7446a904407219eca7a677e729336542409fe71604b07"
+    },
+    "rootfs/etc/systemd/system/systemd-remount-fs.service": {
+      "symlink": "/dev/null"
+    },
+    "rootfs/etc/systemd/system/tmp.mount": {
+      "symlink": "/dev/null"
+    },
+    "rootfs/usr/lib/northforge/boot-status": {
+      "sha256": "9c85ad69968d9ef067d248af9381debf66ad316348313a256e945684e649edf9"
+    },
+    "rootfs/usr/lib/northforge/persistence.sh": {
+      "sha256": "9b61d2d55a35d0f45dd5fe88e4e201d5517c2c1ad68b2d919e38531abc8652b5"
+    },
+    "rootfs/usr/lib/os-release": {
+      "sha256": "417525122aa036127276c7848cf2c5506d4ca4e326fe9f73d3b52590922e8521"
+    },
+    "rootfs/usr/lib/systemd/journald.conf.d/northforge.conf": {
+      "sha256": "86bfd7b7eb463d5c4f5df30bc26316f4da687d5d4cae90cdeb614b42c4e3b5a7"
+    },
+    "rootfs/usr/lib/systemd/system/northforge-boot-status.service": {
+      "sha256": "1c407a241693e3f1ab584d9ba87721c1f2208fd7ebb18464b7e4d84bd551da84"
+    },
+    "tests/qemu/ephemeral-overlay/etc/initramfs-tools/hooks/northforge-test-fwcfg": {
+      "sha256": "039f0600f96046f9b56afd5649a1b88b93e37ed6a3de2c4f409139995611aedb"
+    },
+    "tests/qemu/ephemeral-overlay/etc/initramfs-tools/scripts/local-premount/northforge-test-unlock": {
+      "sha256": "68a5fd08fb50dbfe5f65940d8584919426143ae0382b05247c5315823ff67cb6"
+    },
+    "tests/qemu/ephemeral-overlay/etc/northforge/persistence.conf": {
+      "sha256": "964c3db43e05dab98cc8a077a8a1cb4a044b5a1147d17303aa62e069e42e2474"
+    },
+    "tests/qemu/overlay/etc/systemd/system/multi-user.target.wants/northforge-qemu-test.service": {
+      "symlink": "/usr/lib/systemd/system/northforge-qemu-test.service"
+    },
+    "tests/qemu/overlay/usr/lib/systemd/system/northforge-qemu-test.service": {
+      "sha256": "d27566102f8c84706f743dbddf763e7f7684b6e5a815844650edbb636c6b1be7"
+    },
+    "tests/qemu/overlay/usr/libexec/northforge-qemu-test": {
+      "sha256": "ed0d30d53735325ac0e4d2cedce9941acd9ae2ce5ad9d8c6ef49323b3b33af4e"
+    }
+  },
+  "package_sources": {
+    "mirror": "https://deb.debian.org/debian",
+    "security_mirror": "https://security.debian.org/debian-security",
+    "security_suite": "trixie-security",
+    "suites": [
+      "trixie",
+      "trixie-updates"
+    ],
+    "versions": "packages.tsv"
+  },
+  "partitions": [
+    {
+      "format": "fat32",
+      "label": "NF-ESP",
+      "purpose": "unsigned UEFI loader, kernel and initramfs"
+    },
+    {
+      "format": "ext4",
+      "label": "NF-ROOT",
+      "purpose": "read-only base system"
+    },
+    {
+      "format": "none",
+      "label": "NF-RUNTIME",
+      "purpose": "ephemeral encrypted runtime, reset at boot"
+    }
+  ],
+  "prepared_root_dpkg_status_sha256": null,
+  "prepared_root_reused": false,
+  "reproducibility": "source and package versions recorded; byte identity not established",
+  "schema_version": 1,
+  "secure_boot_verified": false,
+  "security_mode": "development-unsigned-integrity-unverified",
+  "source_dirty": true,
+  "source_revision": "3b251ebc6b0534c8b2ab79c4ec0901dd36e1bd1c",
+  "target": "reference-uefi-x86_64",
+  "test_fixture": true,
+  "version": "0.1.0-dev"
+}

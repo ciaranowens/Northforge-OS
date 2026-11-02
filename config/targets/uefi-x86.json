@@ -1,0 +1,16 @@
+{
+  "name": "uefi-x86",
+  "architecture": "amd64",
+  "board": "uefi-x86",
+  "branch": "legacy",
+  "debian_release": "trixie",
+  "kernel_provider": "debian-generic",
+  "runtime_partition_mib": 1024,
+  "capabilities": {
+    "uefi": true,
+    "secure_boot_verified": false,
+    "tpm_verified": false,
+    "hardware_firewall_verified": false,
+    "physical_hardware_tested": false
+  }
+}

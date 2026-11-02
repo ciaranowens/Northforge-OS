@@ -1,0 +1,116 @@
+#!/bin/sh
+# This fixture is installed only in explicitly requested test images.
+# A mode and per-run nonce must be supplied by the QEMU host through fw_cfg.
+set -eu
+
+modprobe qemu_fw_cfg 2>/dev/null || true
+fwcfg=/sys/firmware/qemu_fw_cfg/by_name/opt/org.northforge
+[ -r "$fwcfg/test-mode/raw" ] || exit 0
+mode=$(tr -d '\000' < "$fwcfg/test-mode/raw")
+nonce=$(tr -d '\000' < "$fwcfg/test-nonce/raw")
+case "$nonce" in ''|*[!0-9a-f]*) exit 1 ;; esac
+[ "${#nonce}" -eq 32 ] || exit 1
+
+report() {
+    # Writing directly to the serial console also works before journald is ready.
+    printf 'NORTHFORGE_TEST %s %s %s\n' "$nonce" "$1" "$2" > /dev/ttyS0
+}
+fail() {
+    trap - EXIT HUP INT TERM
+    report "$1" FAIL
+    sync
+    systemctl --no-block poweroff || true
+    exit 1
+}
+pass() { report "$1" PASS; }
+complete() {
+    pass "$mode.complete"
+    sync
+    systemctl --no-block poweroff
+}
+
+trap 'fail unexpected-error' HUP INT TERM
+trap 'status=$?; [ "$status" -eq 0 ] || fail unexpected-error' EXIT
+
+# Do not use a login shell or a default password to run these assertions.
+. /usr/lib/os-release
+[ "${ID:-}" = northforge ] || fail identity
+[ "${NAME:-}" = 'Northforge OS' ] || fail identity
+pass identity
+[ "$(cat /proc/1/comm)" = systemd ] || fail userspace
+pass userspace
+
+case "$mode" in
+    smoke) complete; exit 0 ;;
+    ephemeral) ;;
+    *) fail unsupported-mode ;;
+esac
+
+lower=/run/northforge/lower
+[ "$(findmnt -n -o FSTYPE /)" = overlay ] || fail root.overlay
+findmnt -n -o OPTIONS --mountpoint "$lower" | tr ',' '\n' | grep -qx ro || fail root.readonly
+[ ! -e "$lower/etc/northforge-qemu-undeclared" ] || fail root.clean-base
+if touch "$lower/etc/northforge-qemu-readonly-probe" 2>/dev/null; then
+    fail root.readonly
+fi
+pass root.readonly
+
+# The disposable upper/work filesystem must actually use the encrypted disk
+# mapper; an overlay backed by tmpfs must not satisfy the runtime test.
+cryptsetup status northforge-runtime | grep -Eq 'type:[[:space:]]+PLAIN' || fail runtime.encrypted
+[ "$(findmnt -n -o FSTYPE --mountpoint /run/northforge/runtime)" = ext4 ] || fail runtime.encrypted
+[ "$(findmnt -n -o MAJ:MIN --mountpoint /run/northforge/runtime)" = "$(lsblk -dn -o MAJ:MIN /dev/mapper/northforge-runtime)" ] || fail runtime.encrypted
+findmnt -n -o OPTIONS / | tr ',' '\n' | grep -qx 'upperdir=/run/northforge/runtime/upper' || fail runtime.encrypted
+[ "$(findmnt -n -o FSTYPE --target /tmp)" = overlay ] || fail runtime.encrypted
+[ "$(stat -c '%d' /tmp)" = "$(stat -c '%d' /)" ] || fail runtime.encrypted
+pass runtime.encrypted
+
+# No secure-volume unlock is implemented yet: the exposed mount must reject
+# writes instead of silently accepting data in an ordinary writable directory.
+findmnt -n -o OPTIONS --mountpoint /secure | tr ',' '\n' | grep -qx ro || fail secure.locked
+if touch /secure/northforge-qemu-locked-probe 2>/dev/null; then
+    fail secure.locked
+fi
+pass secure.locked
+
+# A plaintext directory named /persist must never satisfy this test.
+findmnt --mountpoint /persist >/dev/null || fail persist.encrypted
+cryptsetup status northforge-persist | grep -Eq 'type:[[:space:]]+LUKS2' || fail persist.encrypted
+persist_source=$(findmnt -n -o SOURCE --mountpoint /persist)
+case "$persist_source" in
+    /dev/mapper/northforge-persist|/dev/dm-*) ;;
+    *) fail persist.encrypted ;;
+esac
+[ "$(findmnt -n -o MAJ:MIN --mountpoint /persist)" = "$(lsblk -dn -o MAJ:MIN /dev/mapper/northforge-persist)" ] || fail persist.encrypted
+pass persist.encrypted
+findmnt --mountpoint /var/lib/northforge >/dev/null || fail persist.approved
+[ "$(stat -c '%d:%i' /var/lib/northforge)" = "$(stat -c '%d:%i' /persist/state/northforge)" ] || fail persist.approved
+pass persist.approved
+
+state=/var/lib/northforge/qemu-acceptance-$nonce
+base_hash() {
+    sha256sum "$lower/usr/lib/os-release" "$lower/usr/bin/bash" "$lower/etc/passwd"
+}
+if [ ! -e "$state/stage" ]; then
+    [ ! -e /etc/northforge-qemu-undeclared ] || fail ephemeral.initial-state
+    mkdir -m 0700 "$state"
+    base_hash > "$state/base.sha256"
+    printf '%s\n' "$nonce" > "$state/approved-data"
+    printf '%s\n' "$nonce" > /etc/northforge-qemu-undeclared
+    [ -r /etc/northforge-qemu-undeclared ] || fail ephemeral.write
+    printf 'first-boot\n' > "$state/stage"
+    sync
+    pass ephemeral.first-boot
+    systemctl --no-block reboot
+    exit 0
+fi
+
+[ "$(cat "$state/stage")" = first-boot ] || fail ephemeral.stage
+[ ! -e /etc/northforge-qemu-undeclared ] || fail ephemeral.discard
+pass ephemeral.discard
+[ "$(cat "$state/approved-data")" = "$nonce" ] || fail persist.survives
+pass persist.survives
+base_hash > /run/northforge-qemu-base.sha256
+cmp -s "$state/base.sha256" /run/northforge-qemu-base.sha256 || fail root.unchanged
+pass root.unchanged
+complete

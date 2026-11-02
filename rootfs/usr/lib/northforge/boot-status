@@ -1,0 +1,8 @@
+#!/bin/sh
+set -eu
+. /usr/lib/os-release
+[ "$ID" = northforge ] || exit 1
+[ "$(findmnt -n -o FSTYPE /)" = overlay ] || exit 1
+findmnt -n -o OPTIONS /run/northforge/lower | grep -Eq '(^|,)ro(,|$)' || exit 1
+# The marker says what was checked; it is not a verified-boot attestation.
+printf '%s\n' 'NORTHFORGE_BOOT_READY=1 identity=northforge root=overlay lower=readonly trust=unverified'

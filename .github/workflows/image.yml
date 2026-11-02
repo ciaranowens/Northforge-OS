@@ -1,0 +1,106 @@
+name: Development image
+
+on:
+  workflow_dispatch:
+    inputs:
+      test_suite:
+        description: QEMU acceptance suite (includes isolated guest fixtures)
+        required: true
+        default: ephemeral
+        type: choice
+        options:
+          - ephemeral
+          - smoke
+
+permissions:
+  contents: read
+
+# One privileged image build for this repository, including future targets.
+concurrency:
+  group: northforge-heavyweight
+  cancel-in-progress: false
+
+jobs:
+  authorize-ref:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Require reviewed main
+        env:
+          SELECTED_REF: ${{ github.ref }}
+          EVENT_NAME: ${{ github.event_name }}
+        run: |
+          if [[ "$EVENT_NAME" != workflow_dispatch || "$SELECTED_REF" != refs/heads/main ]]; then
+            echo '::error::Image compilation requires manual dispatch from reviewed main.'
+            exit 1
+          fi
+
+  image:
+    needs: authorize-ref
+    runs-on: [self-hosted, linux, x64, northforge]
+    # Configure required reviewers and protected main in repository settings.
+    environment: northforge-build
+    timeout-minutes: 360
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - name: Verify runner identity and QEMU dependencies
+        run: |
+          set -euo pipefail
+          [[ "$RUNNER_ENVIRONMENT" == self-hosted && "$RUNNER_OS" == Linux && "$RUNNER_ARCH" == X64 ]] || {
+            echo '::error::Use the dedicated Linux x64 self-hosted Northforge VM.'
+            exit 1
+          }
+          for tool in qemu-system-x86_64 qemu-img sfdisk; do
+            command -v "$tool" >/dev/null || {
+              echo "::error::Missing $tool; install qemu-system-x86, qemu-utils and fdisk on the build VM."
+              exit 1
+            }
+          done
+          test -r /usr/share/OVMF/OVMF_CODE_4M.fd || test -r /usr/share/OVMF/OVMF_CODE.fd || {
+            echo '::error::Missing OVMF UEFI firmware; install ovmf on the build VM.'
+            exit 1
+          }
+      - name: Build-environment smoke test
+        run: build/armbian.sh check
+      - name: Validate source before privileged compilation
+        run: python3 tools/check.py
+      - name: Compile development image with explicit guest test fixture
+        env:
+          NORTHFORGE_TEST_MODE: ${{ inputs.test_suite }}
+        run: build/armbian.sh build uefi-x86
+      - name: Verify generated checksums
+        working-directory: out/armbian
+        run: sha256sum --check SHA256SUMS
+      - name: Boot image under UEFI QEMU
+        timeout-minutes: 20
+        env:
+          TEST_SUITE: ${{ inputs.test_suite }}
+        run: |
+          python3 tests/qemu/run.py \
+            --image out/armbian/northforge-uefi-x86.img \
+            --mode "$TEST_SUITE" \
+            --work-dir "artifacts/qemu/$TEST_SUITE" \
+            --timeout 900
+      - name: Publish tested development artifacts
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: northforge-development-${{ github.sha }}
+          path: |
+            out/armbian/northforge-uefi-x86.img
+            out/armbian/release-manifest.json
+            out/armbian/SHA256SUMS
+          if-no-files-found: error
+          retention-days: 3
+          compression-level: 1
+      - name: Preserve diagnostic logs
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: northforge-qemu-${{ github.run_id }}
+          path: |
+            artifacts/qemu/**/*.log
+            artifacts/qemu/**/results.json
+          if-no-files-found: ignore
+          retention-days: 3

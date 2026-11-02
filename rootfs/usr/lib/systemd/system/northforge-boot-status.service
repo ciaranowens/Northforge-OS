@@ -1,0 +1,20 @@
+[Unit]
+Description=Report Northforge software boot status
+After=local-fs.target
+Before=multi-user.target
+OnFailure=poweroff.target
+OnFailureJobMode=replace-irreversibly
+
+[Service]
+Type=oneshot
+ExecStart=/usr/lib/northforge/boot-status
+RemainAfterExit=yes
+StandardOutput=journal+console
+StandardError=journal+console
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+
+[Install]
+WantedBy=multi-user.target

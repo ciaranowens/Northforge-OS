@@ -1,0 +1,8 @@
+NAME="Northforge OS"
+ID=northforge
+ID_LIKE="debian"
+PRETTY_NAME="Northforge OS 0.1 development (Debian GNU/Linux 13)"
+VERSION_ID="0.1"
+VERSION="0.1 development"
+VERSION_CODENAME=trixie
+DEBIAN_VERSION_FULL="13"

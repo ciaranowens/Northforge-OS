@@ -1,0 +1,3 @@
+# Debian initramfs panic must halt rather than launch an unauthenticated shell.
+# A bootloader's explicit panic= parameter can override this default.
+panic=0

@@ -1,0 +1,6 @@
+{
+  "repository": "https://github.com/armbian/build.git",
+  "revision": "8de11a017f7f05a82c77850f8322928cb6a3b70c",
+  "release_tag": "v26.5.1",
+  "container_image": "ghcr.io/armbian/docker-armbian-build@sha256:1eb4e723a9bdec5584a2a46fc39042ca1342b4a9449b097ca12b313be8725327"
+}

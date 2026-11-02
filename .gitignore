@@ -1,0 +1,11 @@
+/.cache/
+/out/
+/artifacts/
+__pycache__/
+*.py[cod]
+/.venv/
+*.qcow2
+*.img
+*.raw
+*.pem
+*.key
