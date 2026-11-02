@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+armbian#!/usr/bin/env python3
 """Pinned Armbian integration; operates only in its owned cache and output tree."""
 from __future__ import annotations
 
@@ -95,25 +95,69 @@ def resolve_container(image):
 
 def direct_arguments(pin, profile, source, image_id=None):
     """Single upstream builder container: no daemon socket or credential mounts."""
-    command = ["docker", "--host=unix:///var/run/docker.sock", "run", "--rm", "--privileged",
-               "--user=0", "--mount", f"type=bind,src={source},dst=/armbian",
-               "--workdir=/armbian", "--env", "ARMBIAN_RUNNING_IN_CONTAINER=yes"]
-    for name in ("HTTP_PROXY", "HTTPS_PROXY", "NO_PROXY", "http_proxy", "https_proxy", "no_proxy"):
+    command = [
+        "docker",
+        "--host=unix:///var/run/docker.sock",
+        "run",
+        "--rm",
+        "--privileged",
+
+        # Armbian loop-device compatibility:
+        # Expose host device nodes so Armbian can discover partition
+        # major/minor numbers and recreate missing nodes inside Docker.
+        "--mount", "type=bind,src=/dev,dst=/tmp/dev,readonly",
+
+        "--user=0",
+        "--mount", f"type=bind,src={source},dst=/armbian",
+        "--workdir=/armbian",
+        "--env", "ARMBIAN_RUNNING_IN_CONTAINER=yes",
+    ]
+
+    for name in ("HTTP_PROXY", "HTTPS_PROXY", "NO_PROXY",
+                 "http_proxy", "https_proxy", "no_proxy"):
         if name in os.environ:
             command.extend(["--env", name])
+
     proxy = os.environ.get("HTTPS_PROXY", os.environ.get("https_proxy", ""))
     host = urllib.parse.urlparse(proxy).hostname
+
     if host:
         command.extend(["--add-host", f"{host}:{socket.gethostbyname(host)}"])
+
     ca_path = os.environ.get("NORTHFORGE_BUILD_CA")
+
     if ca_path:
         ca = Path(ca_path).resolve(strict=True)
-        command.extend(["--mount", f"type=bind,src={ca},dst=/run/northforge-build-ca.pem,readonly"])
-        for name in ("SSL_CERT_FILE", "CURL_CA_BUNDLE", "GIT_SSL_CAINFO", "REQUESTS_CA_BUNDLE"):
-            command.extend(["--env", f"{name}=/run/northforge-build-ca.pem"])
-        command.extend(["--env", "APT_CONFIG=/armbian/userpatches/northforge-apt.conf"])
-    return [*command, image_id or container_reference(pin), "bash", "./compile.sh",
-            *arguments(profile), f"SET_OWNER_TO_UID={os.getuid()}"]
+
+        command.extend([
+            "--mount",
+            f"type=bind,src={ca},dst=/run/northforge-build-ca.pem,readonly"
+        ])
+
+        for name in (
+            "SSL_CERT_FILE",
+            "CURL_CA_BUNDLE",
+            "GIT_SSL_CAINFO",
+            "REQUESTS_CA_BUNDLE"
+        ):
+            command.extend([
+                "--env",
+                f"{name}=/run/northforge-build-ca.pem"
+            ])
+
+        command.extend([
+            "--env",
+            "APT_CONFIG=/armbian/userpatches/northforge-apt.conf"
+        ])
+
+    return [
+        *command,
+        image_id or container_reference(pin),
+        "bash",
+        "./compile.sh",
+        *arguments(profile),
+        f"SET_OWNER_TO_UID={os.getuid()}"
+    ]
 
 
 def owned_cache():
