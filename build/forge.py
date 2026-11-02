@@ -1,4 +1,4 @@
-armbian#!/usr/bin/env python3
+#!/usr/bin/env python3
 """Pinned Armbian integration; operates only in its owned cache and output tree."""
 from __future__ import annotations
 
